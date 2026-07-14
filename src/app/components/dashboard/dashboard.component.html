@@ -56,6 +56,12 @@
                         </div>
 
                         <div class="snapshot-metric">
+                            <span>Average Hashrate</span>
+                            <strong>{{dayAverage(clientInfo.accounting) | hashSuffix}}</strong>
+                            <small>24h average · {{clientInfo.accounting?.hashRateLastHour | hashSuffix}} last hour</small>
+                        </div>
+
+                        <div class="snapshot-metric">
                             <span>Best Difficulty</span>
                             <strong>{{clientInfo.accounting?.bestSubmissionDifficulty | numberSuffix}}</strong>
                             <small>Best submitted difficulty for this address</small>
@@ -82,6 +88,8 @@
                             <th>Mode</th>
                             <th class="numeric-cell">Session ID</th>
                             <th class="numeric-cell">Hashrate</th>
+                            <th class="numeric-cell">1h Avg</th>
+                            <th class="numeric-cell">24h Avg</th>
                             <th class="numeric-cell">Best Difficulty</th>
                             <th class="numeric-cell">Uptime</th>
                             <th class="numeric-cell">Last Seen</th>
@@ -104,6 +112,12 @@
                             </td>
                             <td data-label="Sessions" class="numeric-cell">{{getSessionCount(worker.name, clientInfo.workers)}} Sessions</td>
                             <td data-label="Hashrate" class="numeric-cell">{{getTotalHashRate(worker.name, clientInfo.workers) | hashSuffix}}</td>
+                            <td data-label="1h Avg" class="numeric-cell">
+                                <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">{{averages.hourAvg | hashSuffix}}</ng-container>
+                            </td>
+                            <td data-label="24h Avg" class="numeric-cell">
+                                <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">{{averages.dayAvg | hashSuffix}}</ng-container>
+                            </td>
                             <td data-label="Best Difficulty" class="numeric-cell">{{getBestDifficulty(worker.name, clientInfo.workers) | numberSuffix}}</td>
                             <td></td>
                             <td></td>
@@ -116,6 +130,10 @@
                             <td data-label="Mode"><span [class]="getPayoutModeClass(worker.payoutMode)">{{formatPayoutMode(worker.payoutMode)}}</span></td>
                             <td data-label="Session ID" class="numeric-cell">{{worker.sessionId}}</td>
                             <td data-label="Hashrate" class="numeric-cell">{{worker.hashRate | hashSuffix}}</td>
+                            <!-- Per-session trailing averages need a backend addition (windowed
+                                 sums in getSessionSummaries); group rows carry them until then. -->
+                            <td data-label="1h Avg" class="numeric-cell">—</td>
+                            <td data-label="24h Avg" class="numeric-cell">—</td>
                             <td data-label="Best Difficulty" class="numeric-cell">{{worker.bestDifficulty | numberSuffix}}</td>
                             <td data-label="Uptime" class="numeric-cell">{{worker.startTime | dateAgo}}</td>
                             <td data-label="Last Seen" class="numeric-cell">{{worker.lastSeen | dateAgo}}</td>
@@ -143,6 +161,8 @@
         </div>
     </div>
 </ng-container>
+
+<ng-template #avgPending>…</ng-template>
 
 <ng-template #pageLoading>
     <div class="grid page-grid">
