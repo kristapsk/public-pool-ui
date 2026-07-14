@@ -228,6 +228,23 @@ export class DashboardComponent implements AfterViewInit {
     return (Number(accounting?.creditedDifficultyLastDay ?? 0) * HASHES_PER_DIFFICULTY) / 86400;
   }
 
+  public readonly partialHistoryHint =
+    'Less than 24 h of observed history — the 24h average reads low until a full day accrues.';
+
+  // Best age signal the UI has: the oldest visible session. History predating
+  // the current sessions (earlier connections of the same worker name) is
+  // invisible here, so after a reconnect this can flag a mature worker as
+  // partial for up to a day — qualify the value rather than hide it. The true
+  // first-share age lives backend-side; an age-clamped average supersedes this.
+  public hasFullDayHistory(name: string | null, workers: any[]): boolean {
+    const relevant = name == null ? (workers ?? []) : (workers ?? []).filter(worker => worker.name == name);
+    const earliest = relevant.reduce((pre: number, cur: any) => {
+      const started = new Date(cur.startTime).getTime();
+      return Number.isFinite(started) ? Math.min(pre, started) : pre;
+    }, Number.POSITIVE_INFINITY);
+    return Number.isFinite(earliest) && Date.now() - earliest >= 24 * 60 * 60 * 1000;
+  }
+
   public getSessionCount(name: string, workers: any[]) {
     const workersByName = workers.filter(w => w.name == name);
     return workersByName.length;

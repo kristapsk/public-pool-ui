@@ -57,7 +57,8 @@
 
                         <div class="snapshot-metric">
                             <span>Average Hashrate</span>
-                            <strong>{{dayAverage(clientInfo.accounting) | hashSuffix}}</strong>
+                            <strong [class.avg-partial]="!hasFullDayHistory(null, clientInfo.workers)"
+                                [attr.title]="hasFullDayHistory(null, clientInfo.workers) ? null : partialHistoryHint">{{hasFullDayHistory(null, clientInfo.workers) ? '' : '~'}}{{dayAverage(clientInfo.accounting) | hashSuffix}}</strong>
                             <small>24h average · {{clientInfo.accounting?.hashRateLastHour | hashSuffix}} last hour</small>
                         </div>
 
@@ -116,7 +117,10 @@
                                 <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">{{averages.hourAvg | hashSuffix}}</ng-container>
                             </td>
                             <td data-label="24h Avg" class="numeric-cell">
-                                <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">{{averages.dayAvg | hashSuffix}}</ng-container>
+                                <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">
+                                    <span [class.avg-partial]="!hasFullDayHistory(worker.name, clientInfo.workers)"
+                                        [attr.title]="hasFullDayHistory(worker.name, clientInfo.workers) ? null : partialHistoryHint">{{hasFullDayHistory(worker.name, clientInfo.workers) ? '' : '~'}}{{averages.dayAvg | hashSuffix}}</span>
+                                </ng-container>
                             </td>
                             <td data-label="Best Difficulty" class="numeric-cell">{{getBestDifficulty(worker.name, clientInfo.workers) | numberSuffix}}</td>
                             <td></td>
