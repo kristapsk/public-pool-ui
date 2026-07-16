@@ -1,12 +1,25 @@
 import { AfterViewInit, Component, ViewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Table } from 'primeng/table';
-import { combineLatest, forkJoin, map, Observable, shareReplay } from 'rxjs';
+import { catchError, combineLatest, forkJoin, map, Observable, of, shareReplay, switchMap } from 'rxjs';
 
 import { HashSuffixPipe } from '../../pipes/hash-suffix.pipe';
 import { AppService } from '../../services/app.service';
 import { ClientService } from '../../services/client.service';
+import { WorkerService } from '../../services/worker.service';
 import { AverageTimeToBlockPipe } from 'src/app/pipes/average-time-to-block.pipe';
+
+const HASHES_PER_DIFFICULTY = 4294967296;
+
+export interface GroupAverages {
+  hourAvg: number;
+  dayAvg: number;
+}
+
+export interface FullDayHistory {
+  address: boolean;
+  byName: Record<string, boolean>;
+}
 
 
 
@@ -21,6 +34,8 @@ export class DashboardComponent implements AfterViewInit {
 
   public clientInfo$: Observable<any>;
   public clientInfoByPayoutMode$: Observable<{ pplns: any; solo: any; }>;
+  public groupAverages$: Observable<Record<string, GroupAverages>>;
+  public fullDayHistory$: Observable<FullDayHistory>;
   public chartData$: Observable<any>;
 
   public chartOptions: any;
@@ -36,6 +51,7 @@ export class DashboardComponent implements AfterViewInit {
 
   constructor(
     private clientService: ClientService,
+    private workerService: WorkerService,
     private route: ActivatedRoute,
     private appService: AppService
   ) {
@@ -60,6 +76,47 @@ export class DashboardComponent implements AfterViewInit {
       return info.workers.reduce((pre: any, cur: any) => { pre[cur.name] = true; return pre; }, {});
 
     }));
+
+    // Trailing averages come from the per-group accounting endpoint, which sums
+    // credited work across sessions (address + worker name), so they survive
+    // reconnects — unlike the per-session Hashrate column.
+    this.groupAverages$ = this.clientInfo$.pipe(
+      switchMap((info: any) => {
+        const names: string[] = [...new Set<string>((info.workers ?? []).map((worker: any) => worker.name))];
+        if (names.length === 0) {
+          return of({} as Record<string, GroupAverages>);
+        }
+        return forkJoin(
+          names.map(name => this.workerService.getGroupWorkerInfo(this.address, name).pipe(
+            map((groupInfo: any) => ({
+              name,
+              averages: {
+                hourAvg: Number(groupInfo?.accounting?.hashRateLastHour ?? 0),
+                dayAvg: this.dayAverage(groupInfo?.accounting),
+              } as GroupAverages | null,
+            })),
+            catchError(() => of({ name, averages: null as GroupAverages | null }))
+          ))
+        ).pipe(
+          map(entries => entries.reduce((pre: Record<string, GroupAverages>, cur) => {
+            if (cur.averages != null) {
+              pre[cur.name] = cur.averages;
+            }
+            return pre;
+          }, {}))
+        );
+      }),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
+
+    // Derived once per clientInfo emission: the table reads these flags
+    // several times per group row on every change-detection cycle, so a
+    // template-bound method re-filtering the session list each call is
+    // wasted work (review feedback).
+    this.fullDayHistory$ = this.clientInfo$.pipe(
+      map((info: any) => this.deriveFullDayHistory(info.workers ?? [])),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
 
     const documentStyle = getComputedStyle(document.documentElement);
     const textColor = documentStyle.getPropertyValue('--text-color');
@@ -176,6 +233,42 @@ export class DashboardComponent implements AfterViewInit {
 
   ngAfterViewInit() {
 
+  }
+
+  // The accounting block reports hashRateLastHour but no day-window rate;
+  // derive it from the credited-difficulty day sum. Fixed-window divisor:
+  // a worker with less than a day of history reads low rather than being
+  // extrapolated high (matches the backend's hashRateLastHour semantics).
+  public dayAverage(accounting: any): number {
+    return (Number(accounting?.creditedDifficultyLastDay ?? 0) * HASHES_PER_DIFFICULTY) / 86400;
+  }
+
+  public readonly partialHistoryHint =
+    'Less than 24 h of observed history — the 24h average reads low until a full day accrues.';
+
+  // Best age signal the UI has: the oldest visible session. History predating
+  // the current sessions (earlier connections of the same worker name) is
+  // invisible here, so after a reconnect this can flag a mature worker as
+  // partial for up to a day — qualify the value rather than hide it. The true
+  // first-share age lives backend-side; an age-clamped average supersedes this.
+  private deriveFullDayHistory(workers: any[]): FullDayHistory {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    let addressEarliest = Number.POSITIVE_INFINITY;
+    const earliestByName: Record<string, number> = {};
+    for (const worker of workers) {
+      const started = new Date(worker.startTime).getTime();
+      if (!Number.isFinite(started)) {
+        continue;
+      }
+      addressEarliest = Math.min(addressEarliest, started);
+      const prior = earliestByName[worker.name];
+      earliestByName[worker.name] = prior == null ? started : Math.min(prior, started);
+    }
+    const byName: Record<string, boolean> = {};
+    for (const [name, earliest] of Object.entries(earliestByName)) {
+      byName[name] = earliest <= cutoff;
+    }
+    return { address: addressEarliest <= cutoff, byName };
   }
 
   public getSessionCount(name: string, workers: any[]) {
