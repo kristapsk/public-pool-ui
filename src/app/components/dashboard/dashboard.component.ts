@@ -16,6 +16,11 @@ export interface GroupAverages {
   dayAvg: number;
 }
 
+export interface FullDayHistory {
+  address: boolean;
+  byName: Record<string, boolean>;
+}
+
 
 
 @Component({
@@ -30,6 +35,7 @@ export class DashboardComponent implements AfterViewInit {
   public clientInfo$: Observable<any>;
   public clientInfoByPayoutMode$: Observable<{ pplns: any; solo: any; }>;
   public groupAverages$: Observable<Record<string, GroupAverages>>;
+  public fullDayHistory$: Observable<FullDayHistory>;
   public chartData$: Observable<any>;
 
   public chartOptions: any;
@@ -100,6 +106,15 @@ export class DashboardComponent implements AfterViewInit {
           }, {}))
         );
       }),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
+
+    // Derived once per clientInfo emission: the table reads these flags
+    // several times per group row on every change-detection cycle, so a
+    // template-bound method re-filtering the session list each call is
+    // wasted work (review feedback).
+    this.fullDayHistory$ = this.clientInfo$.pipe(
+      map((info: any) => this.deriveFullDayHistory(info.workers ?? [])),
       shareReplay({ refCount: true, bufferSize: 1 })
     );
 
@@ -236,13 +251,24 @@ export class DashboardComponent implements AfterViewInit {
   // invisible here, so after a reconnect this can flag a mature worker as
   // partial for up to a day — qualify the value rather than hide it. The true
   // first-share age lives backend-side; an age-clamped average supersedes this.
-  public hasFullDayHistory(name: string | null, workers: any[]): boolean {
-    const relevant = name == null ? (workers ?? []) : (workers ?? []).filter(worker => worker.name == name);
-    const earliest = relevant.reduce((pre: number, cur: any) => {
-      const started = new Date(cur.startTime).getTime();
-      return Number.isFinite(started) ? Math.min(pre, started) : pre;
-    }, Number.POSITIVE_INFINITY);
-    return Number.isFinite(earliest) && Date.now() - earliest >= 24 * 60 * 60 * 1000;
+  private deriveFullDayHistory(workers: any[]): FullDayHistory {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    let addressEarliest = Number.POSITIVE_INFINITY;
+    const earliestByName: Record<string, number> = {};
+    for (const worker of workers) {
+      const started = new Date(worker.startTime).getTime();
+      if (!Number.isFinite(started)) {
+        continue;
+      }
+      addressEarliest = Math.min(addressEarliest, started);
+      const prior = earliestByName[worker.name];
+      earliestByName[worker.name] = prior == null ? started : Math.min(prior, started);
+    }
+    const byName: Record<string, boolean> = {};
+    for (const [name, earliest] of Object.entries(earliestByName)) {
+      byName[name] = earliest <= cutoff;
+    }
+    return { address: addressEarliest <= cutoff, byName };
   }
 
   public getSessionCount(name: string, workers: any[]) {

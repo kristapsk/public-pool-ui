@@ -55,10 +55,10 @@
                             <small>{{modeInfo.solo.accounting?.creditedDifficultyLast10Minutes | numberSuffix}} last 10m</small>
                         </div>
 
-                        <div class="snapshot-metric">
+                        <div class="snapshot-metric" *ngIf="fullDayHistory$ | async as fullDay">
                             <span>Average Hashrate</span>
-                            <strong [class.avg-partial]="!hasFullDayHistory(null, clientInfo.workers)"
-                                [attr.title]="hasFullDayHistory(null, clientInfo.workers) ? null : partialHistoryHint">{{hasFullDayHistory(null, clientInfo.workers) ? '' : '~'}}{{dayAverage(clientInfo.accounting) | hashSuffix}}</strong>
+                            <strong [class.avg-partial]="!fullDay.address"
+                                [attr.title]="fullDay.address ? null : partialHistoryHint">{{fullDay.address ? '' : '~'}}{{dayAverage(clientInfo.accounting) | hashSuffix}}</strong>
                             <small>24h average · {{clientInfo.accounting?.hashRateLastHour | hashSuffix}} last hour</small>
                         </div>
 
@@ -118,8 +118,8 @@
                             </td>
                             <td data-label="24h Avg" class="numeric-cell">
                                 <ng-container *ngIf="(groupAverages$ | async)?.[worker.name] as averages; else avgPending">
-                                    <span [class.avg-partial]="!hasFullDayHistory(worker.name, clientInfo.workers)"
-                                        [attr.title]="hasFullDayHistory(worker.name, clientInfo.workers) ? null : partialHistoryHint">{{hasFullDayHistory(worker.name, clientInfo.workers) ? '' : '~'}}{{averages.dayAvg | hashSuffix}}</span>
+                                    <span *ngIf="fullDayHistory$ | async as fullDay" [class.avg-partial]="!fullDay.byName[worker.name]"
+                                        [attr.title]="fullDay.byName[worker.name] ? null : partialHistoryHint">{{fullDay.byName[worker.name] ? '' : '~'}}{{averages.dayAvg | hashSuffix}}</span>
                                 </ng-container>
                             </td>
                             <td data-label="Best Difficulty" class="numeric-cell">{{getBestDifficulty(worker.name, clientInfo.workers) | numberSuffix}}</td>
