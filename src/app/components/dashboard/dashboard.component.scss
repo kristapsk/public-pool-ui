@@ -160,3 +160,10 @@
 .avg-partial {
     color: var(--text-color-secondary);
 }
+
+// A session listed from share history with no live connection behind it —
+// e.g. a set_payout payout identity between serves. The row's data is real
+// (credited shares in the trailing day); only the presence is gone.
+.session-idle {
+    opacity: 0.65;
+}

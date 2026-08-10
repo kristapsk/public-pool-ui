@@ -129,15 +129,19 @@
                     </ng-template>
 
                     <ng-template pTemplate="rowexpansion" let-worker>
-                        <tr [routerLink]="[worker.name, worker.sessionId]">
+                        <tr [routerLink]="[worker.name, worker.sessionId]" [class.session-idle]="worker.live === false">
                             <td></td>
                             <td data-label="Mode"><span [class]="getPayoutModeClass(worker.payoutMode)">{{formatPayoutMode(worker.payoutMode)}}</span></td>
                             <td data-label="Session ID" class="numeric-cell">{{worker.sessionId}}</td>
                             <td data-label="Hashrate" class="numeric-cell">{{worker.hashRate | hashSuffix}}</td>
-                            <!-- Per-session trailing averages need a backend addition (windowed
-                                 sums in getSessionSummaries); group rows carry them until then. -->
-                            <td data-label="1h Avg" class="numeric-cell">—</td>
-                            <td data-label="24h Avg" class="numeric-cell">—</td>
+                            <!-- Per-session trailing averages: windowed credited-work rates from
+                                 share history; absent on a backend without them (older API). -->
+                            <td data-label="1h Avg" class="numeric-cell">
+                                <ng-container *ngIf="worker.hashRate1h != null; else avgUnavailable">{{worker.hashRate1h | hashSuffix}}</ng-container>
+                            </td>
+                            <td data-label="24h Avg" class="numeric-cell">
+                                <ng-container *ngIf="worker.hashRate24h != null; else avgUnavailable">{{worker.hashRate24h | hashSuffix}}</ng-container>
+                            </td>
                             <td data-label="Best Difficulty" class="numeric-cell">{{worker.bestDifficulty | numberSuffix}}</td>
                             <td data-label="Uptime" class="numeric-cell">{{worker.startTime | dateAgo}}</td>
                             <td data-label="Last Seen" class="numeric-cell">{{worker.lastSeen | dateAgo}}</td>
@@ -167,6 +171,7 @@
 </ng-container>
 
 <ng-template #avgPending>…</ng-template>
+<ng-template #avgUnavailable>—</ng-template>
 
 <ng-template #pageLoading>
     <div class="grid page-grid">
