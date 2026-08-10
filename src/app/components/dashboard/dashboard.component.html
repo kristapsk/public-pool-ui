@@ -13,7 +13,7 @@
                     </div>
                     <div class="hero-stat">
                         <span>Workers</span>
-                        <strong>{{(clientInfo.workers?.length || 0) | number}}</strong>
+                        <strong>{{getWorkerCount(clientInfo.workers) | number}}</strong>
                     </div>
                 </div>
             </div>

@@ -276,6 +276,16 @@ export class DashboardComponent implements AfterViewInit {
     return workersByName.length;
   }
 
+  /**
+   * Distinct worker names — what the table calls a worker (rows group by
+   * name; sessions are the expansion). The list now includes sessions from
+   * the trailing day's share history, so counting raw entries would report
+   * one worker's reconnects as several workers.
+   */
+  public getWorkerCount(workers: any[] | null | undefined): number {
+    return new Set((workers ?? []).map(w => w.name)).size;
+  }
+
   public getTotalHashRate(name: string, workers: any[]) {
     const workersByName = workers.filter(w => w.name == name);
     const sum = workersByName.reduce((pre, cur, idx, arr) => {
