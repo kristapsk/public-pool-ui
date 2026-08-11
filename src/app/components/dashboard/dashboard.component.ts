@@ -35,6 +35,7 @@ export class DashboardComponent implements AfterViewInit {
   public clientInfo$: Observable<any>;
   public clientInfoByPayoutMode$: Observable<{ pplns: any; solo: any; }>;
   public groupAverages$: Observable<Record<string, GroupAverages>>;
+  public workerCount$: Observable<number>;
   public fullDayHistory$: Observable<FullDayHistory>;
   public chartData$: Observable<any>;
 
@@ -115,6 +116,13 @@ export class DashboardComponent implements AfterViewInit {
     // wasted work (review feedback).
     this.fullDayHistory$ = this.clientInfo$.pipe(
       map((info: any) => this.deriveFullDayHistory(info.workers ?? [])),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
+
+    // Same reasoning as above: the header binding would otherwise rebuild the
+    // name Set on every change-detection pass (review feedback).
+    this.workerCount$ = this.clientInfo$.pipe(
+      map((info: any) => this.countWorkers(info.workers)),
       shareReplay({ refCount: true, bufferSize: 1 })
     );
 
@@ -282,7 +290,7 @@ export class DashboardComponent implements AfterViewInit {
    * the trailing day's share history, so counting raw entries would report
    * one worker's reconnects as several workers.
    */
-  public getWorkerCount(workers: any[] | null | undefined): number {
+  private countWorkers(workers: any[] | null | undefined): number {
     return new Set((workers ?? []).map(w => w.name)).size;
   }
 

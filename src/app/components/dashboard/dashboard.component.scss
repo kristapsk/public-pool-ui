@@ -162,7 +162,8 @@
 }
 
 // A session listed from share history with no live connection behind it —
-// e.g. a set_payout payout identity between serves. The row's data is real
+// e.g. a set_payout payout identity between the time slices in which a supply
+// connection serves it ("between serves"). The row's data is real
 // (credited shares in the trailing day); only the presence is gone.
 .session-idle {
     opacity: 0.65;
