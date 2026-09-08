@@ -1,7 +1,7 @@
 import { AfterViewInit, Component, ViewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Table } from 'primeng/table';
-import { catchError, combineLatest, forkJoin, map, Observable, of, shareReplay, switchMap } from 'rxjs';
+import { catchError, combineLatest, forkJoin, map, Observable, of, shareReplay, startWith, switchMap } from 'rxjs';
 
 import { HashSuffixPipe } from '../../pipes/hash-suffix.pipe';
 import { AppService } from '../../services/app.service';
@@ -14,6 +14,9 @@ const HASHES_PER_DIFFICULTY = 4294967296;
 export interface GroupAverages {
   hourAvg: number;
   dayAvg: number;
+  // ISO time of the group's oldest retained share (null = none recorded;
+  // absent = backend predates the field). Durable across reconnects.
+  oldestShareAt?: string | null;
 }
 
 export interface FullDayHistory {
@@ -94,6 +97,7 @@ export class DashboardComponent implements AfterViewInit {
               averages: {
                 hourAvg: Number(groupInfo?.accounting?.hashRateLastHour ?? 0),
                 dayAvg: this.dayAverage(groupInfo?.accounting),
+                oldestShareAt: groupInfo?.accounting?.oldestShareAt,
               } as GroupAverages | null,
             })),
             catchError(() => of({ name, averages: null as GroupAverages | null }))
@@ -110,12 +114,17 @@ export class DashboardComponent implements AfterViewInit {
       shareReplay({ refCount: true, bufferSize: 1 })
     );
 
-    // Derived once per clientInfo emission: the table reads these flags
-    // several times per group row on every change-detection cycle, so a
-    // template-bound method re-filtering the session list each call is
-    // wasted work (review feedback).
-    this.fullDayHistory$ = this.clientInfo$.pipe(
-      map((info: any) => this.deriveFullDayHistory(info.workers ?? [])),
+    // Derived once per emission: the table reads these flags several times
+    // per group row on every change-detection cycle, so a template-bound
+    // method re-filtering the session list each call is wasted work
+    // (review feedback). groupAverages$ starts with {} so the address tile
+    // doesn't wait on the per-group fetches; group rows only render their
+    // flag once their averages arrive anyway.
+    this.fullDayHistory$ = combineLatest([
+      this.clientInfo$,
+      this.groupAverages$.pipe(startWith({} as Record<string, GroupAverages>)),
+    ]).pipe(
+      map(([info, groups]) => this.deriveFullDayHistory(info, groups)),
       shareReplay({ refCount: true, bufferSize: 1 })
     );
 
@@ -254,13 +263,14 @@ export class DashboardComponent implements AfterViewInit {
   public readonly partialHistoryHint =
     'Less than 24 h of observed history — the 24h average reads low until a full day accrues.';
 
-  // Best age signal the UI has: the oldest visible session. History predating
-  // the current sessions (earlier connections of the same worker name) is
-  // invisible here, so after a reconnect this can flag a mature worker as
-  // partial for up to a day — qualify the value rather than hide it. The true
-  // first-share age lives backend-side; an age-clamped average supersedes this.
-  private deriveFullDayHistory(workers: any[]): FullDayHistory {
+  // Preferred age signal: the accounting block's oldestShareAt — the oldest
+  // retained share for the address / worker group. It survives reconnects,
+  // so a proxy restart or watchdog reconnect no longer flags a mature worker
+  // as partial for up to a day. Sessions remain the fallback for a backend
+  // that predates the field (absent ≠ null: null means genuinely no shares).
+  private deriveFullDayHistory(info: any, groups: Record<string, GroupAverages>): FullDayHistory {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const workers: any[] = info?.workers ?? [];
     let addressEarliest = Number.POSITIVE_INFINITY;
     const earliestByName: Record<string, number> = {};
     for (const worker of workers) {
@@ -272,11 +282,24 @@ export class DashboardComponent implements AfterViewInit {
       const prior = earliestByName[worker.name];
       earliestByName[worker.name] = prior == null ? started : Math.min(prior, started);
     }
+    const fullDay = (oldestShareAt: string | null | undefined, sessionEarliest: number): boolean => {
+      if (oldestShareAt === undefined) {
+        return sessionEarliest <= cutoff;
+      }
+      if (oldestShareAt === null) {
+        return false;
+      }
+      const oldest = new Date(oldestShareAt).getTime();
+      return Number.isFinite(oldest) ? oldest <= cutoff : sessionEarliest <= cutoff;
+    };
     const byName: Record<string, boolean> = {};
     for (const [name, earliest] of Object.entries(earliestByName)) {
-      byName[name] = earliest <= cutoff;
+      byName[name] = fullDay(groups[name]?.oldestShareAt, earliest);
     }
-    return { address: addressEarliest <= cutoff, byName };
+    return {
+      address: fullDay(info?.accounting?.oldestShareAt, addressEarliest),
+      byName,
+    };
   }
 
   public getSessionCount(name: string, workers: any[]) {
